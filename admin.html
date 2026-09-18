@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>لوحة التحكم</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0b0d12;color:#e8eaf0;font-family:system-ui,-apple-system,sans-serif;
+padding:20px;line-height:1.6}
+.hide{display:none!important}
+h1{font-size:22px;margin-bottom:20px;color:#5b8cff}
+h2{font-size:18px;margin:24px 0 12px;color:#98a0b3;border-bottom:1px solid #1e2330;padding-bottom:8px}
+.login{max-width:340px;margin:80px auto;text-align:center;padding:30px;
+background:#12151f;border-radius:16px}
+.login input{width:100%;padding:14px;border-radius:10px;border:1px solid #2a3040;
+background:#0b0d12;color:#fff;font-size:16px;margin:14px 0;font-family:inherit}
+.login button{width:100%;padding:14px;border:0;border-radius:10px;background:#2f6bff;
+color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit}
+.card{background:#12151f;border:1px solid #1e2330;border-radius:12px;
+padding:14px;margin-bottom:10px;font-size:14px}
+.card b{color:#5b8cff}
+.card code{background:#0b0d12;padding:2px 8px;border-radius:6px;color:#5fd08a;font-size:13px}
+.btn{padding:8px 16px;border:0;border-radius:8px;font-family:inherit;
+font-size:13px;font-weight:700;cursor:pointer;margin-top:8px}
+.btn-red{background:#e07777;color:#fff}
+.btn-green{background:#5fd08a;color:#000}
+.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.tab{padding:10px 20px;border-radius:10px;background:#12151f;border:1px solid #1e2330;
+color:#98a0b3;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600}
+.tab.on{background:#2f6bff;color:#fff;border-color:#2f6bff}
+.stat{display:inline-block;background:#12151f;padding:12px 20px;border-radius:10px;
+margin:4px;font-size:15px}
+.stat b{color:#5b8cff;font-size:20px}
+</style>
+</head>
+<body>
+
+<div class="login" id="login">
+  <h1>🔐 لوحة التحكم</h1>
+  <input type="password" id="pw" placeholder="كلمة السر">
+  <button onclick="check()">دخول</button>
+</div>
+
+<div class="hide" id="dash">
+  <h1>📊 لوحة التحكم</h1>
+  <div id="stats"></div>
+
+  <div class="tabs">
+    <button class="tab on" onclick="show('users',this)">👥 المستخدمون</button>
+    <button class="tab" onclick="show('images',this)">📸 الصور</button>
+  </div>
+
+  <div id="users"></div>
+  <div id="images" class="hide"></div>
+</div>
+
+<script>
+// ====== كلمة السر ======
+// غيّرها إلى ما تريد
+const PASSWORD = 'Saleck2026';
+
+const SB_URL = 'https://ethtgusiodtiwpasfstj.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0aHRndXNpb2R0aXdwYXNmc3RqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3NDAwOTEsImV4cCI6MjA4NDMxNjA5MX0.C8EHoTKcTKm6R4NT-F0cgOPcNPmH-C9E2VmG2VZAfm4';
+
+async function sb(path) {
+  const r = await fetch(SB_URL + '/rest/v1/' + path, {
+    headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
+  });
+  return await r.json();
+}
+
+function check() {
+  const v = document.getElementById('pw').value;
+  if (v === PASSWORD) {
+    document.getElementById('login').classList.add('hide');
+    document.getElementById('dash').classList.remove('hide');
+    loadAll();
+  } else {
+    alert('❌ كلمة السر خطأ');
+  }
+}
+
+function show(which, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('users').classList.toggle('hide', which !== 'users');
+  document.getElementById('images').classList.toggle('hide', which !== 'images');
+}
+
+async function loadAll() {
+  const users = await sb('users?order=created_at.desc') || [];
+  const images = await sb('images?order=created_at.desc&limit=100') || [];
+
+  document.getElementById('stats').innerHTML =
+    '<div class="stat">👥 <b>' + users.length + '</b> مستخدم</div>' +
+    '<div class="stat">📸 <b>' + images.length + '</b> صورة</div>';
+
+  let uh = '';
+  users.forEach(u => {
+    uh += '<div class="card">' +
+      '<b>' + (u.name || '—') + '</b> ' + (u.username || '') + '<br>' +
+      '🆔 <code>' + u.chat_id + '</code><br>' +
+      '🔗 <code>' + (u.link || '—') + '</code><br>' +
+      '📅 ' + new Date(u.created_at).toLocaleString('ar') + '<br>' +
+      (u.blocked
+        ? '<button class="btn btn-green" onclick="unblock(' + u.chat_id + ')">✅ إلغاء الحظر</button>'
+        : '<button class="btn btn-red" onclick="block(' + u.chat_id + ')">🚫 حظر</button>') +
+      '</div>';
+  });
+  document.getElementById('users').innerHTML = uh || '<p>لا يوجد مستخدمون بعد.</p>';
+
+  let ih = '';
+  images.forEach(im => {
+    ih += '<div class="card">' +
+      '🆔 <code>' + im.chat_id + '</code><br>' +
+      '📱 ' + (im.device || '—') + '<br>' +
+      '🌐 ' + (im.ip || '—') + '<br>' +
+      '📅 ' + new Date(im.created_at).toLocaleString('ar') +
+      '</div>';
+  });
+  document.getElementById('images').innerHTML = ih || '<p>لا توجد صور بعد.</p>';
+}
+
+function block(id) {
+  if (!confirm('حظر هذا المستخدم؟')) return;
+  fetch(SB_URL + '/rest/v1/users?chat_id=eq.' + id, {
+    method: 'PATCH',
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ blocked: true })
+  }).then(() => loadAll());
+}
+
+function unblock(id) {
+  fetch(SB_URL + '/rest/v1/users?chat_id=eq.' + id, {
+    method: 'PATCH',
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ blocked: false })
+  }).then(() => loadAll());
+}
+</script>
+
+</body>
+</html>
