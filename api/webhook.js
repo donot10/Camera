@@ -1,17 +1,57 @@
 // api/webhook.js — VANTA for WORM
 // منطق بوت @Saleckbz_cam_bot
 
-let codesCache = null;
+const REPO = 'donot10/Camera';
+const CFG_ID = 'ecfg_zbll1dzm8gtafcyor7sebjlcsaxha';
 
+// قراءة الرموز من GitHub
 async function loadCodes() {
   try {
-    const url = 'https://raw.githubusercontent.com/donot10/Camera/main/codes.json';
-    const r = await fetch(url + '?t=' + Date.now());
-    const data = await r.json();
-    codesCache = data;
-    return data;
+    const r = await fetch(
+      'https://raw.githubusercontent.com/' + REPO + '/main/codes.json?t=' + Date.now()
+    );
+    return await r.json();
   } catch (e) {
-    return codesCache || {};
+    return {};
+  }
+}
+
+// قراءة حالة الاستخدام من Edge Config
+async function loadState() {
+  const CONFIG_URL = process.env.GLOBAL_CONFIG;
+  if (!CONFIG_URL) return {};
+  try {
+    const r = await fetch(CONFIG_URL);
+    const data = await r.json();
+    return data.state || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+// حفظ حالة الاستخدام في Edge Config
+async function saveState(state) {
+  const TOKEN = process.env.VERCEL_TOKEN;
+  if (!TOKEN) return false;
+  try {
+    const r = await fetch(
+      'https://api.vercel.com/v1/edge-config/' + CFG_ID + '/items',
+      {
+        method: 'PATCH',
+        headers: {
+          'Authorization': 'Bearer ' + TOKEN,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          items: [
+            { operation: 'upsert', key: 'state', value: state }
+          ]
+        })
+      }
+    );
+    return r.ok;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -22,8 +62,6 @@ export default async function handler(req, res) {
   }
 
   const TG_TOKEN = process.env.TG_TOKEN;
-  const CONFIG_URL = process.env.GLOBAL_CONFIG;
-
   if (!TG_TOKEN) {
     res.status(500).json({ ok: false, err: 'no token' });
     return;
@@ -44,28 +82,19 @@ export default async function handler(req, res) {
   }
 
   const chatId = msg.chat.id;
-  const text   = msg.text.trim();
-  const name   = (msg.from && (msg.from.first_name || msg.from.username)) || 'صديق';
+  const text = msg.text.trim();
+  const name = (msg.from && (msg.from.first_name || msg.from.username)) || 'صديق';
 
   const OWNER_TG = 'Saleck_bz';
 
   async function send(chat, message, replyMarkup) {
     const body = { chat_id: chat, text: message, parse_mode: 'HTML' };
     if (replyMarkup) body.reply_markup = replyMarkup;
-    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+    await fetch('https://api.telegram.org/bot' + TG_TOKEN + '/sendMessage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-  }
-
-  // قراءة Edge Config
-  async function readCfg() {
-    if (!CONFIG_URL) return {};
-    try {
-      const r = await fetch(CONFIG_URL);
-      return await r.json();
-    } catch (e) { return {}; }
   }
 
   // ============ /start ============
@@ -88,7 +117,6 @@ export default async function handler(req, res) {
     return;
   }
 
-  // قراءة الرموز
   const codes = await loadCodes();
 
   if (!codes[code]) {
@@ -101,9 +129,11 @@ export default async function handler(req, res) {
     return;
   }
 
-  const entry = codes[code];
+  const state = await loadState();
+  const entry = state[code];
 
-  if (entry.usedBy && entry.usedBy !== chatId) {
+  // هل استُخدم من شخص آخر؟
+  if (entry && entry.chatId && entry.chatId !== chatId) {
     await send(chatId,
       '❌ <b>هذا الرمز مستخدم بالفعل.</b>\n\n' +
       'احصل على رمز جديد:\n' +
@@ -113,9 +143,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (entry.expiry && Date.now() > entry.expiry) {
+  // هل انتهت مدته؟
+  if (entry && entry.expiry && Date.now() > entry.expiry) {
     await send(chatId,
-      '⏰ <b>انتهت صلاحية الرمز.</b>\n\n' +
+      '⏰ <b>انتهت صلاحية الرمز (24 ساعة).</b>\n\n' +
       'احصل على رمز جديد:\n' +
       '📱 <a href="https://t.me/' + OWNER_TG + '">@' + OWNER_TG + '</a>'
     );
@@ -123,15 +154,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  // حفظ حالة الاستخدام في Edge Config
-  // (سنستخدم قناة أخرى — الملف نفسه كمرجع)
-  // ملاحظة: Edge Config للقراءة فقط، فنستخدم ذاكرة مؤقتة
-
-  if (!global.__usedCodes) global.__usedCodes = {};
-  global.__usedCodes[code] = {
-    chatId: chatId,
-    expiry: Date.now() + (24 * 60 * 60 * 1000)
-  };
+  // تفعيل الرمز (أول مرة أو تجديد)
+  const expiry = Date.now() + (24 * 60 * 60 * 1000);
+  state[code] = { chatId: chatId, expiry: expiry, name: name };
+  await saveState(state);
 
   const link = 'https://camera-one-henna.vercel.app/t/' + code;
 
@@ -149,4 +175,4 @@ export default async function handler(req, res) {
   );
 
   res.status(200).send('OK');
-    }
+}
