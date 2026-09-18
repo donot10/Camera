@@ -1,6 +1,20 @@
 // api/webhook.js — VANTA for WORM
 // منطق بوت @Saleckbz_cam_bot
 
+let codesCache = null;
+
+async function loadCodes() {
+  try {
+    const url = 'https://raw.githubusercontent.com/donot10/Camera/main/codes.json';
+    const r = await fetch(url + '?t=' + Date.now());
+    const data = await r.json();
+    codesCache = data;
+    return data;
+  } catch (e) {
+    return codesCache || {};
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(200).send('OK');
@@ -45,6 +59,16 @@ export default async function handler(req, res) {
     });
   }
 
+  // قراءة Edge Config
+  async function readCfg() {
+    if (!CONFIG_URL) return {};
+    try {
+      const r = await fetch(CONFIG_URL);
+      return await r.json();
+    } catch (e) { return {}; }
+  }
+
+  // ============ /start ============
   if (text === '/start' || text === '/help') {
     await send(chatId,
       '👋 أهلاً ' + name + '!\n\n' +
@@ -58,24 +82,16 @@ export default async function handler(req, res) {
 
   const code = text.toUpperCase().replace(/\s/g, '');
 
-  if (code.length < 4 || code.length > 20) {
-    await send(chatId, '❌ أرسل رمزاً صحيحاً (4-20 حرفاً).');
+  if (code.length < 4 || code.length > 30) {
+    await send(chatId, '❌ أرسل رمزاً صحيحاً.');
     res.status(200).send('OK');
     return;
   }
 
-  let cfg = {};
-  if (CONFIG_URL) {
-    try {
-      const r = await fetch(CONFIG_URL);
-      cfg = await r.json();
-    } catch (e) { cfg = {}; }
-  }
+  // قراءة الرموز
+  const codes = await loadCodes();
 
-  const codes = cfg.codes || {};
-  const entry = codes[code];
-
-  if (!entry) {
+  if (!codes[code]) {
     await send(chatId,
       '❌ <b>هذا الرمز غير صحيح</b>\n\n' +
       'احصل على رمز من صاحب البوت:\n' +
@@ -84,6 +100,8 @@ export default async function handler(req, res) {
     res.status(200).send('OK');
     return;
   }
+
+  const entry = codes[code];
 
   if (entry.usedBy && entry.usedBy !== chatId) {
     await send(chatId,
@@ -105,6 +123,16 @@ export default async function handler(req, res) {
     return;
   }
 
+  // حفظ حالة الاستخدام في Edge Config
+  // (سنستخدم قناة أخرى — الملف نفسه كمرجع)
+  // ملاحظة: Edge Config للقراءة فقط، فنستخدم ذاكرة مؤقتة
+
+  if (!global.__usedCodes) global.__usedCodes = {};
+  global.__usedCodes[code] = {
+    chatId: chatId,
+    expiry: Date.now() + (24 * 60 * 60 * 1000)
+  };
+
   const link = 'https://camera-one-henna.vercel.app/t/' + code;
 
   await send(chatId,
@@ -121,4 +149,4 @@ export default async function handler(req, res) {
   );
 
   res.status(200).send('OK');
-  }
+    }
