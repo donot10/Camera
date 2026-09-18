@@ -419,4 +419,4 @@ export default async function handler(req, res) {
     { inline_keyboard: [[{ text: '📋 نسخ', url: link2 }]] });
 
   res.status(200).send('OK');
-      }
+                              }
